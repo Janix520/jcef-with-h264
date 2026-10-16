@@ -69,10 +69,10 @@ jobs:
           name: windows-${{ matrix.platform }}-build
           path: jcef_build/windows_${{ matrix.platform }}.tar.gz
   java-cef-macos:
-    runs-on: [macos-14]
+    runs-on: macos-15
     strategy:
       matrix:
-        platform: [amd64, arm64]
+        platform: [x86_64, arm64]
     steps:
       - uses: actions/checkout@v4
       - name: Setup JDK
@@ -81,48 +81,20 @@ jobs:
           java-version: '8'
           distribution: 'zulu'
       - run: |
-          brew install ninja
-          brew install coreutils
-          sudo xcode-select --switch /Applications/Xcode_13.1.app
+          brew install ninja ant
+          xcodebuild -version
           mkdir jcef_build && cd jcef_build
           export CEF_USE_GN=1
           export GN_DEFINES="is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome"
           cmake -G "Ninja" -DPROJECT_ARCH=${{ matrix.platform }} -DCMAKE_BUILD_TYPE=Release ..
-          ninja -j4
+          ninja -j$(sysctl -n hw.ncpu)
           mv native/Release macos_${{ matrix.platform }}
           tar -czf macos_${{ matrix.platform }}.tar.gz macos_${{ matrix.platform }}
-          sha256sum macos_${{ matrix.platform }}.tar.gz > macos_${{ matrix.platform }}.tar.gz.sha256
+          shasum -a 256 macos_${{ matrix.platform }}.tar.gz > macos_${{ matrix.platform }}.tar.gz.sha256
       - name: Upload java-cef build
         uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.platform }}-build
-          path: jcef_build/macos_${{ matrix.platform }}.tar.gz
-  java-cef-macos-legacy:
-    runs-on: [macos-13]
-    strategy:
-      matrix:
-        platform: [amd64]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup JDK
-        uses: actions/setup-java@v5
-        with:
-          java-version: '8'
-          distribution: 'zulu'
-      - run: |
-          brew install ninja
-          brew install coreutils
-          sudo xcode-select --switch /Applications/Xcode_13.1.app
-          mkdir jcef_build && cd jcef_build
-          export CEF_USE_GN=1
-          export GN_DEFINES="is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome"
-          cmake -G "Ninja" -DPROJECT_ARCH=${{ matrix.platform }} -DCMAKE_BUILD_TYPE=Release ..
-          ninja -j4
-          mv native/Release macos_${{ matrix.platform }}
-          tar -czf macos_${{ matrix.platform }}.tar.gz macos_${{ matrix.platform }}
-          sha256sum macos_${{ matrix.platform }}.tar.gz > macos_${{ matrix.platform }}.tar.gz.sha256
-      - name: Upload java-cef build
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-${{ matrix.platform }}-build
-          path: jcef_build/macos_${{ matrix.platform }}.tar.gz
+          path: |
+            jcef_build/macos_${{ matrix.platform }}.tar.gz
+            jcef_build/macos_${{ matrix.platform }}.tar.gz.sha256
