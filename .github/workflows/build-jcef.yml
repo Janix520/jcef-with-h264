@@ -75,14 +75,26 @@ jobs:
         platform: [x86_64, arm64]
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup JDK
         uses: actions/setup-java@v5
         with:
           java-version: '8'
           distribution: 'zulu'
+
+      # 关键：buildtools 自带的 gsutil 5.30 不支持 Python 3.12+，
+      # 镜像默认 3.14 会让它崩在 EnumDefinitionError
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - run: |
           brew install ninja ant
           xcodebuild -version
+          python3 --version
+          export PYTHON_EXECUTABLE="$(command -v python3)"
+          echo "PYTHON_EXECUTABLE=$PYTHON_EXECUTABLE"
           mkdir jcef_build && cd jcef_build
           export CEF_USE_GN=1
           export GN_DEFINES="is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome"
