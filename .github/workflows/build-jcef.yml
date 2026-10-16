@@ -110,3 +110,35 @@ jobs:
           path: |
             jcef_build/macos_${{ matrix.platform }}.tar.gz
             jcef_build/macos_${{ matrix.platform }}.tar.gz.sha256
+
+
+ release:
+    name: Create Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - java-cef-linux
+      - java-cef-windows
+      - java-cef-macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p dist
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec mv {} dist/ \;
+          ls -lh dist
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.sha256
+          generate_release_notes: true
+          draft: true
