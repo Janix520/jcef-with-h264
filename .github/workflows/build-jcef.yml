@@ -9,6 +9,60 @@ on:
   workflow_dispatch:
 
 jobs:
+
+  # ---------------------------------------------------------------------------
+  # jcef.jar 是纯 Java 产物，与平台无关，只编一次。
+  # CMake/ninja 只负责 native（libjcef / jcef_helper / macOS app bundle），
+  # 在 Linux/Windows 上必须由 tools/compile.* + tools/make_jar.* 单独生成 jar。
+  # ---------------------------------------------------------------------------
+  jcef-jar:
+    name: Build jcef.jar (platform independent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: 'temurin'
+
+      # org/cef/browser/CefRenderer.java 和 CefBrowserOsr.java 依赖 com.jogamp。
+      # 仓库里 third_party/jogamp/jar/ 是空目录（只有 README + LICENSE），必须先补齐。
+      # 注意：jogamp 2.4.0 起不再发布到 Maven Central，只在其官方仓库，
+      # 所以不要用 repo1.maven.org 的坐标。
+      - name: Download jogamp jars
+        run: |
+          set -e
+          mkdir -p third_party/jogamp/jar
+          BASE="https://jogamp.org/deployment/v2.4.0/jar"
+          ALT="https://jogamp.org/deployment/archive/rc/v2.4.0/jar"
+          for f in jogl-all.jar gluegen-rt.jar; do
+            curl -fsSL --retry 3 --retry-delay 5 -o "third_party/jogamp/jar/$f" "$BASE/$f" \
+              || curl -fsSL --retry 3 --retry-delay 5 -o "third_party/jogamp/jar/$f" "$ALT/$f"
+          done
+          ls -lh third_party/jogamp/jar
+
+      - name: Compile java classes and make jar
+        run: |
+          set -e
+          cd tools
+          # 参数只是决定 out/<platform> 目录名，jar 本身不含平台相关代码
+          ./compile.sh linux64
+          ./make_jar.sh linux64
+          mkdir -p ../jcef-jar-out
+          cp ../out/linux64/jcef.jar ../out/linux64/jcef-tests.jar ../jcef-jar-out/
+          cd ../jcef-jar-out
+          unzip -l jcef.jar | head -20
+          test -n "$(unzip -Z1 jcef.jar 'org/cef/CefApp.class')" || { echo "jcef.jar 缺少 org/cef 类"; exit 1; }
+          ls -lh
+
+      - name: Upload jcef.jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: jcef-jar
+          path: jcef-jar-out/*.jar
+          
   java-cef-linux:
     runs-on: [ubuntu-22.04]
     strategy:
@@ -117,6 +171,7 @@ jobs:
     name: Create Release
     if: startsWith(github.ref, 'refs/tags/')
     needs:
+      - jcef-jar
       - java-cef-linux
       - java-cef-windows
       - java-cef-macos
@@ -132,7 +187,8 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p dist
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -exec mv {} dist/ \;
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.sha256' -o -name '*.jar'\) -exec mv {} dist/ \;
+          cd dist && sha256sum jcef.jar > jcef.jar.sha256 && cd ..
           ls -lh dist
 
       - name: Publish Release
@@ -141,5 +197,6 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.sha256
+            dist/*.jar
           generate_release_notes: true
           draft: true
